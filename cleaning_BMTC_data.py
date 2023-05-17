@@ -156,7 +156,7 @@ def update_trip_planner(input_path: str, output_path: str) -> int:
     # Saving the dataframe as csv
     try:
         trip_planner_df.to_csv(output_path, index=False)
-    except FileNotFoundError:
+    except OSError:
         # Specify the path where you want to create the directory
         directory_path = '/'.join(output_path.split('/')[:-1])
         os.makedirs(directory_path)
@@ -186,14 +186,18 @@ def cleaning_data(path: str) -> None:
         file_ls = file.split('\\')
         output_file = path + '/' + 'Updated-trip-planner-logs' + '/' + file_ls[-1]
         num_missing_stops.append(update_trip_planner(file, output_file))
+
     # Plot size
     plt.figure(figsize=(19.27, 9.67))
+
     # Plot the curve
     plt.plot(list(range(len(num_missing_stops))), num_missing_stops)
+
     # Add labels and title
     plt.xlabel('X-axis')
     plt.ylabel('No of rows')
     plt.title('No of missing OD coordinate rows')
+
     # Display the plot
     plt.show()
     plt.savefig(path + '/trip-planner-logs/plots/missing_rows.png')
