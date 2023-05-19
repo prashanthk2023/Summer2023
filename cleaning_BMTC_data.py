@@ -6,8 +6,7 @@ import os
 import folium
 import glob
 import matplotlib.pyplot as plt
-import time
-
+from tqdm import tqdm
 
 def initialize_data(path: str) -> None:
     """
@@ -21,8 +20,8 @@ def initialize_data(path: str) -> None:
     print(f'No of bus stops initially :{len(bus_stops_df)}')
     # Remove the stops which are out of bounding box with respect to Bangalore
     bus_stops_df = bus_stops_df[
-        ((bus_stops_df.latitude_current > 12.7569) & (bus_stops_df.latitude_current < 13.2934)) & (
-                (bus_stops_df.longitude_current > 77.4454) & (bus_stops_df.longitude_current < 77.9000))]
+        ((bus_stops_df.latitude_current > 11) & (bus_stops_df.latitude_current < 15)) & (
+                (bus_stops_df.longitude_current > 76) & (bus_stops_df.longitude_current < 79))]
     print('Bounding box is applied to filter the bus stops')
     print(f'No of bus stops after applying Bounding box :{len(bus_stops_df)}')
 
@@ -119,7 +118,7 @@ def random_selection() -> pd.DataFrame:
         This function randomly selects one row for each group of bus_stop_name and stored in dataframe
     :return: pd.DataFrame
     """
-    global bus_stops_df
+    global bus_stops_df,unique_bus_stops
     # Use groupby() and sample to randomly select one row for each group
     unique_bus_stops = bus_stops_df.groupby('bus_stop_name').sample(n=1)
     # Reset the index of the result DataFrame
@@ -127,13 +126,13 @@ def random_selection() -> pd.DataFrame:
     return unique_bus_stops
 
 
-def update_trip_planner(input_path: str, output_path: str) -> int:
+def update_trip_planner(input_path: str, output_path: str) -> tuple:
     """
         This function adds new coordinates of origin and destination
         stops to the trip planner data and returns no of missing row coordinates
     :param input_path: Path of the trip planner csv file : str
     :param output_path: Path of the updated csv file is saved : str
-    :return: no of missing row coordinates : int
+    :return: no of missing row coordinates  and name of stops: tuple
     """
     unique_bus_stops = random_selection()
     # Creating the trip planner dataframe
@@ -153,6 +152,8 @@ def update_trip_planner(input_path: str, output_path: str) -> int:
     trip_planner_df.drop(labels=['bus_stop_name'], axis=1, inplace=True)
     # Calculating the missing desti_stops and orig_stops
     no_missing_od = len(trip_planner_df[trip_planner_df.desti_lat.isna() | trip_planner_df.Origin_lat.isna()])
+    stops_coordinates_missing = list(trip_planner_df[trip_planner_df.desti_lat.isna()].dest_stop_name.unique())
+    stops_coordinates_missing.extend(list(trip_planner_df[trip_planner_df.Origin_lat.isna()].orig_stop_name.unique()))
     # Saving the dataframe as csv
     try:
         trip_planner_df.to_csv(output_path, index=False)
@@ -161,7 +162,7 @@ def update_trip_planner(input_path: str, output_path: str) -> int:
         directory_path = '/'.join(output_path.split('/')[:-1])
         os.makedirs(directory_path)
         trip_planner_df.to_csv(output_path, index=False)
-    return no_missing_od
+    return no_missing_od, stops_coordinates_missing
 
 
 def cleaning_data(path: str) -> None:
@@ -170,7 +171,7 @@ def cleaning_data(path: str) -> None:
     :param path: str
     :return: None
     """
-    global bus_stops_df
+    global bus_stops_df,num_missing_stops,stops_missing_ls
     initialize_data(path)
     # Saving Mean and std of repeated stops in csv file in plot file located in trip-planner-logs
     statistics_repeated_stops(path + '/trip-planner-logs/plots/out.csv', save="Y")
@@ -182,10 +183,14 @@ def cleaning_data(path: str) -> None:
     # Updating all trip-planner-logs csv files and plotting the no of rows missing in each log
     csv_files = glob.glob(os.path.join(path + '/trip-planner-logs', "*.csv"))
     num_missing_stops = []
-    for file in csv_files:
+    stops_missing_ls = []
+    for file in tqdm(csv_files):
         file_ls = file.split('\\')
         output_file = path + '/' + 'Updated-trip-planner-logs' + '/' + file_ls[-1]
-        num_missing_stops.append(update_trip_planner(file, output_file))
+        no_missing_od, stops_coordinates_missing = update_trip_planner(file, output_file)
+        num_missing_stops.append(no_missing_od)
+        stops_missing_ls.extend(stops_coordinates_missing)
+    stops_missing_ls = list(set(stops_missing_ls))
 
     # Plot size
     plt.figure(figsize=(19.27, 9.67))
@@ -197,16 +202,14 @@ def cleaning_data(path: str) -> None:
     plt.xlabel('X-axis')
     plt.ylabel('No of rows')
     plt.title('No of missing OD coordinate rows')
-
+    plt.savefig(path + '/trip-planner-logs/plots/missing_rows.jpg')
     # Display the plot
     plt.show()
-    plt.savefig(path + '/trip-planner-logs/plots/missing_rows.png')
     print('Plot for no of missing data rows is created.')
     return None
 
 
 if __name__ == '__main__':
-    start_time = time.time()
+    # In below function pass the path of the cleaning_bangalore_OD folder
     cleaning_data('./cleaning_bangalore_OD')
-    end_time = time.time()
-    print(f'Time taken in seconds: {(end_time - start_time)}')
+    # print(f"No of missing bus stop coordinates:{len(stops_missing_ls)}")
