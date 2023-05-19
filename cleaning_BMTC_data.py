@@ -8,27 +8,36 @@ import glob
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+
 def initialize_data(path: str) -> None:
     """
         This function initializes the data by reading the stops.csv file and filter the data.
     :param path: Directory path of the data : str
     :return: None
     """
-    global bus_stops_df
-    bus_stops_df = pd.read_csv(path + '/bus_stop.csv')
+    global merged_df
+    # Read the stops file from Nihal's data
+    bus_stops1_df = pd.read_csv(path + "/bmtc-stop-name-latlong-mapping.csv")
+    bus_stops1_df.rename(columns={'formatted_stop_name': 'bus_stop_name', 'latitude': 'latitude_current',
+                                  'longitude': 'longitude_current'}, inplace=True)
+    bus_stops2_df = pd.read_csv(path + "/BMTC Routes Stops 2022 (1).csv")
+    bus_stops3_df = pd.read_csv(path + '/bus_stop.csv')
+    bus_stops4_df = pd.read_csv(path + '/retrived_bus_stops.csv')
+    merged_df = pd.concat([bus_stops1_df[['bus_stop_name', 'latitude_current', 'longitude_current']],
+                           bus_stops2_df[['bus_stop_name', 'latitude_current', 'longitude_current']]])
+    merged_df = pd.concat([merged_df, bus_stops3_df[['bus_stop_name', 'latitude_current', 'longitude_current']]])
+    merged_df = pd.concat([merged_df, bus_stops4_df[['bus_stop_name', 'latitude_current', 'longitude_current']]])
     # Latitude column_name is 'latitude_current' and longitude column is longitude_current
-    print(f'No of bus stops initially :{len(bus_stops_df)}')
-    # Remove the stops which are out of bounding box with respect to Bangalore
-    bus_stops_df = bus_stops_df[
-        ((bus_stops_df.latitude_current > 11) & (bus_stops_df.latitude_current < 15)) & (
-                (bus_stops_df.longitude_current > 76) & (bus_stops_df.longitude_current < 79))]
-    print('Bounding box is applied to filter the bus stops')
-    print(f'No of bus stops after applying Bounding box :{len(bus_stops_df)}')
-
+    print(f'No of bus stops initially :{len(merged_df)}')
     # Remove the duplicates of stop names and coordinates
-    bus_stops_df = bus_stops_df.drop_duplicates(['bus_stop_name', 'latitude_current', 'longitude_current'])
+    merged_df = merged_df.drop_duplicates(['bus_stop_name', 'latitude_current', 'longitude_current'])
     print('Removed duplicates of stops with same name and coordinates')
-    print(f'No of bus stops after removing duplicates :{len(bus_stops_df)}')
+    print(f'No of bus stops after removing duplicates :{len(merged_df)}')
+    # Remove the stops which are out of bounding box with respect to Bangalore
+    merged_df = merged_df[((merged_df.latitude_current > 11) & (merged_df.latitude_current < 15)) & (
+            (merged_df.longitude_current > 76) & (merged_df.longitude_current < 79))]
+    print('Bounding box is applied to filter the bus stops')
+    print(f'No of bus stops after applying Bounding box :{len(merged_df)}')
     return None
 
 
@@ -37,8 +46,8 @@ def finding_repeated_stop() -> tuple:
         This function finds the repeated stops and returns the repeated stops, number of repeated stops and dictionary
     :return: tuple
     """
-    global bus_stops_df
-    counter = Counter(bus_stops_df.bus_stop_name)
+    global merged_df
+    counter = Counter(merged_df.bus_stop_name)
     # Finding the repeated stops_names
     repeated_stops = []
     number = 0
@@ -56,11 +65,12 @@ def statistics_repeated_stops(output_path, save: str = 'N') -> pd.DataFrame:
     :param save: To save the output dataframe as csv file : str
     :return: pd.DataFrame
     """
+    global merged_df
     repeated_stops, number, counter = finding_repeated_stop()
     output_dict = {'bus_stop_name': [], 'mean': [], 'std_dev': [], 'count': []}
     for stop in repeated_stops:
-        stop_lat_long_array = np.array(
-            bus_stops_df[bus_stops_df.bus_stop_name == stop][['latitude_current', 'longitude_current']])
+        stop_lat_long_array = np.array(merged_df
+                                       [merged_df.bus_stop_name == stop][['latitude_current', 'longitude_current']])
         matrix = haversine_vector(stop_lat_long_array, stop_lat_long_array, Unit.METERS, comb=True)
         # Mask the diagonal elements
         mask = ~np.eye(matrix.shape[0], dtype=bool)
@@ -102,12 +112,13 @@ def creating_plots(path: str) -> None:
     :param path: str
     :return: None
     """
+    global merged_df
     output_df = statistics_repeated_stops('', 'N')
     # Considering the stops with top 10 mean for plotting
     stops_plot = list(output_df.head(10)['bus_stop_name'])
     for stop in stops_plot:
-        lats = list(bus_stops_df[bus_stops_df.bus_stop_name == stop].latitude_current)
-        lons = list(bus_stops_df[bus_stops_df.bus_stop_name == stop].longitude_current)
+        lats = list(merged_df[merged_df.bus_stop_name == stop].latitude_current)
+        lons = list(merged_df[merged_df.bus_stop_name == stop].longitude_current)
         map = plot_coordinates(lats, lons)
         map.save(path + '/trip-planner-logs/plots' + f'/{stop}.html')
     return None
@@ -118,9 +129,9 @@ def random_selection() -> pd.DataFrame:
         This function randomly selects one row for each group of bus_stop_name and stored in dataframe
     :return: pd.DataFrame
     """
-    global bus_stops_df,unique_bus_stops
+    global merged_df, unique_bus_stops
     # Use groupby() and sample to randomly select one row for each group
-    unique_bus_stops = bus_stops_df.groupby('bus_stop_name').sample(n=1)
+    unique_bus_stops = merged_df.groupby('bus_stop_name').sample(n=1)
     # Reset the index of the result DataFrame
     unique_bus_stops = unique_bus_stops.reset_index(drop=True)
     return unique_bus_stops
@@ -171,7 +182,7 @@ def cleaning_data(path: str) -> None:
     :param path: str
     :return: None
     """
-    global bus_stops_df,num_missing_stops,stops_missing_ls
+    global merged_df, num_missing_stops, stops_missing_ls
     initialize_data(path)
     # Saving Mean and std of repeated stops in csv file in plot file located in trip-planner-logs
     statistics_repeated_stops(path + '/trip-planner-logs/plots/out.csv', save="Y")
@@ -212,4 +223,9 @@ def cleaning_data(path: str) -> None:
 if __name__ == '__main__':
     # In below function pass the path of the cleaning_bangalore_OD folder
     cleaning_data('./cleaning_bangalore_OD')
-    # print(f"No of missing bus stop coordinates:{len(stops_missing_ls)}")
+    # print(f"No of missing bus stop coordinates:{len(stops_missing_ls)}
+#
+# output_pd = pd.read_csv(r'./cleaning_bangalore_OD/trip-planner-logs/plots/out.csv')
+# out
+# # Bivariate analysis of count and mean of repeated stops
+# sns.jointplot(x='count', y='mean', data=output_pd, kind='reg')
