@@ -4,6 +4,7 @@ from haversine import haversine_vector, Unit
 from tqdm import tqdm
 import pickle
 
+# Read the parent zones data
 child_zones_data = pd.read_excel('Greedy_OSM_test/Centroids_2931_v2.xlsx')
 child_zones_data = child_zones_data.rename(columns={'Zone Id': 'zone_Id'})
 od_parent_zones = pd.read_csv('Greedy_OSM_test/CARS (Peak Hour).csv', nrows=519, index_col=0)
@@ -34,8 +35,8 @@ output_dict = {'Node_number': [],'Node Coordinates': [],'distance': []}
 for idx,row in tqdm(child_zones_data.iterrows()):
     output_dict['Node_number'].append(row.zone_Id)
     distance_array = haversine_vector([(row.XX, row.YY)], nodes, Unit.METERS,comb=True)
-    index_min = np.round(np.argmin(distance_array),2)
+    index_min = np.argmin(distance_array)
     output_dict['Node Coordinates'].append(tuple(nodes[index_min]))
-    output_dict['distance'].append(distance_array[index_min][0])
+    output_dict['distance'].append(np.round(distance_array[index_min][0],2))
 output_df = pd.DataFrame(output_dict)
-output_df[['Node_number','Node Coordinates']].to_csv('Greedy_OSM_test/child_zones_to_nodes.csv',index=False)
+output_df.to_csv('Greedy_OSM_test/child_zones_to_nodes.csv',index=False)
