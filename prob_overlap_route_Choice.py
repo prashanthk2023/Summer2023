@@ -46,8 +46,8 @@ def read_GTFS_data(filename: str) -> None:
 
 read_GTFS_data('./GTFS.zip')
 
-fare_rules_df = fare_rules_df.drop_duplicates(subset=['fare_id', 'origin_id', 'destination_id', 'route_id'])
-avg_fare = fare_attributes['price'].mean()
+# fare_rules_df = fare_rules_df.drop_duplicates(subset=['fare_id', 'origin_id', 'destination_id', 'route_id'])
+# avg_fare = fare_attributes['price'].mean()
 
 # Read the data 2017
 od_data_2017 = pd.read_excel('./Route_choice_Modelling/Route choice by origin-destination pair 2017.xls', skiprows=3)
@@ -132,27 +132,28 @@ def finding_leg_attributes(orig: str, dest: str) -> tuple:
         tt = None
         route_id = '0'
         stop_sequence = []
-    try:
-        fare_id = fare_rules_df[(fare_rules_df['route_id'] == route_id) & (fare_rules_df['origin_id'] == orig_zone) & (
-                fare_rules_df['destination_id'] == dest_zone)].fare_id.unique()[0]
-        fare = fare_attributes[fare_attributes.fare_id == fare_id].price.values[0]
-    except IndexError:
-        fare = avg_fare
-    return tt, fare, stop_sequence, route_id
+    # try:
+    #     fare_id = fare_rules_df[(fare_rules_df['route_id'] == route_id) & (fare_rules_df['origin_id'] == orig_zone) & (
+    #             fare_rules_df['destination_id'] == dest_zone)].fare_id.unique()[0]
+    #     fare = fare_attributes[fare_attributes.fare_id == fare_id].price.values[0]
+    # except IndexError:
+    #     pass
+    #     # fare = avg_fare
+    return tt,  stop_sequence, route_id
 
 
 # Finding the travel time and fare for each route
 issues = []
 issues_id = []
 od_data_2017['Travel_time'] = 0
-od_data_2017['fare'] = 0
+# od_data_2017['fare'] = 0
 od_data_2017['stops'] = 0
 od_data_2017['route'] = 0
 # travel_time_ls = []
 # fare_ls = []
 # route_ls = []
 od_data_2017.reset_index(drop=True, inplace=True)
-for id, row in tqdm(od_data_2017.iloc[:, :].iterrows(), total=len(od_data_2017.iloc[:, :])):
+for id, row in tqdm(od_data_2017.iloc[:100, :].iterrows(), total=len(od_data_2017.iloc[:100, :])):
     org = 1
     temp = []
     temp3 = []
@@ -162,14 +163,14 @@ for id, row in tqdm(od_data_2017.iloc[:, :].iterrows(), total=len(od_data_2017.i
             dest = row[3]
         else:
             dest = row[3 + transfer]
-        tt, fare, stops_sequence, route_id = finding_leg_attributes(orig, dest)
+        tt, stops_sequence, route_id = finding_leg_attributes(orig, dest)
         if tt is None:
             issues.append((orig, dest))
             issues_id.append(id)
             break
         org = 3 + transfer
         od_data_2017.loc[id, 'Travel_time'] += tt
-        od_data_2017.loc[id, 'fare'] += fare
+        # od_data_2017.loc[id, 'fare'] += fare
         t = [orig, dest, route_id]
         temp3.extend([t])
         temp.extend(stops_sequence)
@@ -180,7 +181,7 @@ for id, row in tqdm(od_data_2017.iloc[:, :].iterrows(), total=len(od_data_2017.i
     od_data_2017.loc[id, 'route'] = [temp4]
 
 # Removing the rows with no route found
-od_data_2017_updated = od_data_2017.loc[:, :].loc[~od_data_2017.loc[:, :].index.isin(issues_id), :]
+od_data_2017_updated = od_data_2017.loc[:100, :].loc[~od_data_2017.loc[:100, :].index.isin(issues_id), :]
 od_data_2017_original_group = pd.DataFrame(
     od_data_2017.groupby(by=['origin_name', 'destination_name']).size().sort_values(ascending=False))
 od_data_2017_updated_grouped = pd.DataFrame(
