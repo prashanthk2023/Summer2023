@@ -101,8 +101,7 @@ def preProcessing(gtfs_path: str, file_path: str, year: int) -> None:
         # file_path = './Route_choice_Modelling/NBT19MTT3a_routechoice_tb_wf.csv'
         # Reading 2019 od data
         od_data = pd.read_csv(file_path)
-        lines_df = pd.read_excel('./Route_choice_Modelling/edited_NBT19_Definitions_Published.xlsx', sheet_name='Lines',
-                                 engine='openpyxl')
+        lines_df = pd.read_excel('./edited_NBT19_Definitions_Published.xlsx', sheet_name='Lines',engine='openpyxl')
         # Reading the definitions data for lines and considering only the underground lines.
         lines_df = lines_df[lines_df.Tsys.str.startswith('u')]
         lines_lu = list(lines_df.LineCode)
@@ -143,9 +142,12 @@ def preProcessing(gtfs_path: str, file_path: str, year: int) -> None:
         od_data.drop(columns=['1', '8', 'route_1'], inplace=True)
         # Changing the column names
         od_data.rename(columns={'2': '1', '3': '2', '4': '3', '5': '4', '6': '5', '7': '6'}, inplace=True)
+        # Rounding off the values in the dataframe
+        od_data[['1', '2', '3', '4', '5', '6']] = od_data[['1', '2', '3', '4', '5', '6']].round(0)
     # Considering the only OD's with more than 1 routes
     od_data_grouped = od_data.groupby('od').size().sort_values(ascending=True)
     od_data = od_data[od_data.od.isin(od_data_grouped[od_data_grouped > 1].index)]
+    print(f"After preprocessing the data: {len(od_data)}")
     # Considering only the required columns
     od_data = od_data[['od', 'route', 'transfers', '1', '2', '3', '4', '5', '6']]
     return None
@@ -166,18 +168,27 @@ def prepIndividualDataset():
 
 
 def stops_trips_fn():
-    global stops_trips_dict, stops_df, stop_times_df
+    global stops_trips_dict, stops_df, stop_times_df, leg_stops_sequence
     stops_trips_dict = {}
     stop_times_df['arrival_time'] = pd.to_timedelta(stop_times_df['arrival_time'])
     for stop in stops_df.stop_id.unique():
         stops_trips_dict[stop] = set(stop_times_df[stop_times_df.stop_id == stop].trip_id.unique())
     stop_times_df.loc[(stop_times_df['arrival_time'] >= pd.to_timedelta('00:00:00')) & (
             stop_times_df['arrival_time'] < pd.to_timedelta('02:00:00')), 'arrival_time'] += pd.to_timedelta('1 days')
+    leg_stops_sequence = {}
     return None
 
 
-def leg_wise_attributes(orig_id, dest_id, departure_time):
-    global stop_times_df, stops_df, route_name_trips_dict, stops_trips_dict
+def leg_wise_attributes(orig_id: str, dest_id: str, departure_time: str) -> tuple:
+    """
+    This function estimates the leg wise attributes for the given origin and destination using the arrival time at the
+    origin of leg
+    :param orig_id: str, origin stop_id of the leg
+    :param dest_id: str, destination stop_id of the leg
+    :param departure_time: str, departure time from the origin stop_id
+    :return: tuple, (IVTT,wait_time,stop_sequence,arrival_time)
+    """
+    global stop_times_df, stops_df, route_name_trips_dict, stops_trips_dict, leg_stops_sequence
     # Finding the trips that are common between the origin and destination
     data = stop_times_df[stop_times_df.trip_id.isin(stops_trips_dict[orig_id] & stops_trips_dict[dest_id])]
     # Finding the rows with the origin and destination
@@ -196,15 +207,26 @@ def leg_wise_attributes(orig_id, dest_id, departure_time):
             departure_time)).seconds / 60
         dept_time = pd.to_timedelta(data[data.trip_id == trip_id].arrival_time.values[1])
         IVTT = (pd.to_timedelta(dept_time) - pd.to_timedelta(departure_time)).seconds / 60 - wait_time
-        org_idx = data[data.trip_id == trip_id].index.values[0]
-        dest_idx = data[data.trip_id == trip_id].index.values[1]
-        stop_sequence = list(stop_times_df.loc[org_idx:dest_idx, 'stop_id'].values)
+        try:
+            stop_sequence = leg_stops_sequence[(orig_id, dest_id)]
+        except KeyError:
+            org_idx = data[data.trip_id == trip_id].index.values[0]
+            dest_idx = data[data.trip_id == trip_id].index.values[1]
+            stop_sequence = list(stop_times_df.loc[org_idx:dest_idx, 'stop_id'].values)
+            leg_stops_sequence[(orig_id, dest_id)] = stop_sequence
     except IndexError:
         wait_time, dept_time, IVTT, stop_sequence = -10000, departure_time, -10000, []
     return IVTT, wait_time, stop_sequence, dept_time
 
 
-def route_wise_attributes(route, dept_time):
+def route_wise_attributes(route: list, dept_time: pd.to_timedelta) -> dict:
+    """
+    This function calculates the route wise attributes by iterating over the route for each leg using the
+    leg_wise_attributes function.
+    :param route: list of stops only origin, transfer and destination
+    :param dept_time: pd.to_timedelta, arrival time at the origin
+    :return: dict with route wise attributes
+    """
     global stop_times_df, stops_df, route_name_trips_dict, stops_trips_dict
     route_attributes = {'IVTT': 0, 'stop_sequence': [], 'initial_wait_time': 0, 'transfer_wait_time': 0, 'Not_found': 0}
     for i in range(len(route) - 1):
@@ -227,7 +249,13 @@ def route_wise_attributes(route, dept_time):
     return route_attributes
 
 
-def row_wise_attributes(row):
+def row_wise_attributes(row: dict) -> dict:
+    """
+    This function calculates the attributes of the row i.e., individual commute for every available alternative
+    using route_wise attributes function.
+    :param row: dictionary of the row of the dataframe
+    :return: dictionary of the attributes of the row
+    """
     global max_alt
     row_attributes = {'Not_found': 0}
     for alt in range(1, max_alt + 1):
@@ -264,7 +292,12 @@ def row_wise_attributes(row):
     return row_attributes
 
 
-def create_individual_time_interval():
+def create_individual_time_interval() -> None:
+    """
+    This function creates individual level data points for each time interval and stores in global dictionary with
+    keys as 1,2,3,4,5,6 and values as dataframes
+    :return: None
+    """
     global od_data, od_timeInterval_dict
     od_timeInterval_dict = {}
     time_dict = {'2': '7:00:00-10:00:00', '1': '05:00:00-07:00:00', '3': '10:00:00-16:00:00', '4': '16:00:00-19:00:00',
@@ -290,7 +323,11 @@ def create_individual_time_interval():
     return None
 
 
-def haversine_distance():
+def haversine_distance() -> None:
+    """
+    This function calculates the distance between each stop pair using haversine formula and stores in global variable
+    :return: None
+    """
     global stops_stops_dict, stops_data, ps_od_dict
     # Creating the array of stops_coordinates
     stops_cord = np.array(stops_df[['stop_lat', 'stop_lon']])
@@ -333,18 +370,19 @@ def path_size(row):
 
 
 if __name__ == '__main__':
-    year = 2017
+    year = 2019
     preProcessing(gtfs_path='GTFS.zip',
-                  file_path='Route choice by origin-destination pair 2017.xls', year=year)
+                  file_path='NBT19MTT3a_routechoice_tb_wf.csv', year=year)
     # preProcessing(gtfs_path='./Route_choice_Modelling/GTFS.zip',
     #               file_path='./Route_choice_Modelling/Route choice by origin-destination pair 2017.xls', year=year)
     prepIndividualDataset()
     stops_trips_fn()
     create_individual_time_interval()
     haversine_distance()
-    print('Preprocessing done')
+    print(f'Preprocessing done at {datetime.datetime.now().strftime("%H:%M:%S")}')
+    print('-' * 150)
     for key in od_timeInterval_dict.keys():
-        print(f'Processing for time interval {key}')
+        print(f'Processing for time interval {key} and its length is {len(od_timeInterval_dict[key])}')
         # Converting dataframe to a list of dictionaries where each dictionary is a row.
         od_timeInterval_df = od_timeInterval_dict[key].loc[:]
         route_columns = [f'route_{i}' for i in range(1, max_alt + 1)]
@@ -369,4 +407,5 @@ if __name__ == '__main__':
         print(f'Time taken for the parallel with 20 cores: {(time.time() - start_time)}')
         od_timeInterval_df.to_csv(f'./Output/od_{year}_{key}.csv', index=False)
         print(f'File saved in ./Route_choice_Modelling/Output/od_{year}_{key}.csv')
-
+        print(f'This interval done at {datetime.datetime.now().strftime("%H:%M:%S")}')
+        print('-' * 150)
