@@ -101,7 +101,7 @@ def preProcessing(gtfs_path: str, file_path: str, year: int) -> None:
         # file_path = './Route_choice_Modelling/NBT19MTT3a_routechoice_tb_wf.csv'
         # Reading 2019 od data
         od_data = pd.read_csv(file_path)
-        lines_df = pd.read_excel('./edited_NBT19_Definitions_Published.xlsx', sheet_name='Lines',engine='openpyxl')
+        lines_df = pd.read_excel('./edited_NBT19_Definitions_Published.xlsx', sheet_name='Lines', engine='openpyxl')
         # Reading the definitions data for lines and considering only the underground lines.
         lines_df = lines_df[lines_df.Tsys.str.startswith('u')]
         lines_lu = list(lines_df.LineCode)
@@ -159,16 +159,21 @@ def prepIndividualDataset():
     # Creating a column with route number for the respective OD pair
     od_data['choice'] = od_data.groupby('od').cumcount() + 1
     max_alt = od_data.choice.max()
+
     # Creating the dataframe with OD as index and their respective routes as columns
     alternative_routes = od_data.pivot(index='od', columns='choice', values='route')
     alternative_routes.columns = ['route_{}'.format(i) for i in range(1, len(alternative_routes.columns) + 1)]
+
     # Merging the dataframe with the original dataframe
     od_data = od_data.merge(alternative_routes, on='od')
+
+    # Filling Nan with zero in alternative routes
+    od_data.loc[:, alternative_routes.columns] = od_data.loc[:, alternative_routes.columns].fillna(0)
     return None
 
 
 def stops_trips_fn():
-    global stops_trips_dict, stops_df, stop_times_df, leg_stops_sequence
+    global stops_trips_dict, stops_df, stop_times_df, leg_stops_sequence,route_name_trips_dict
     stops_trips_dict = {}
     stop_times_df['arrival_time'] = pd.to_timedelta(stop_times_df['arrival_time'])
     for stop in stops_df.stop_id.unique():
@@ -176,10 +181,13 @@ def stops_trips_fn():
     stop_times_df.loc[(stop_times_df['arrival_time'] >= pd.to_timedelta('00:00:00')) & (
             stop_times_df['arrival_time'] < pd.to_timedelta('02:00:00')), 'arrival_time'] += pd.to_timedelta('1 days')
     leg_stops_sequence = {}
+    route_name_trips_dict = {}
+    for route in routes_df.route_short_name.unique():
+        route_name_trips_dict[route] = set(trips_df[trips_df.route_name == route].trip_id.unique())
     return None
 
 
-def leg_wise_attributes(orig_id: str, dest_id: str, departure_time: str) -> tuple:
+def leg_wise_attributes(orig_id: str, dest_id: str, route:str, departure_time: str) -> tuple:
     """
     This function estimates the leg wise attributes for the given origin and destination using the arrival time at the
     origin of leg
@@ -188,9 +196,10 @@ def leg_wise_attributes(orig_id: str, dest_id: str, departure_time: str) -> tupl
     :param departure_time: str, departure time from the origin stop_id
     :return: tuple, (IVTT,wait_time,stop_sequence,arrival_time)
     """
-    global stop_times_df, stops_df, route_name_trips_dict, stops_trips_dict, leg_stops_sequence
+    global stop_times_df, stops_df, route_name_trips_dict, stops_trips_dict, leg_stops_sequence,route_names_trips_dict
     # Finding the trips that are common between the origin and destination
-    data = stop_times_df[stop_times_df.trip_id.isin(stops_trips_dict[orig_id] & stops_trips_dict[dest_id])]
+    trips = list(route_name_trips_dict[route] & stops_trips_dict[orig_id] & stops_trips_dict[dest_id])
+    data = stop_times_df[stop_times_df.trip_id.isin(trips)]
     # Finding the rows with the origin and destination
     data = data[data.stop_id.isin([orig_id, dest_id])]
     # Sorting the data based on arrival_time
@@ -230,7 +239,7 @@ def route_wise_attributes(route: list, dept_time: pd.to_timedelta) -> dict:
     global stop_times_df, stops_df, route_name_trips_dict, stops_trips_dict
     route_attributes = {'IVTT': 0, 'stop_sequence': [], 'initial_wait_time': 0, 'transfer_wait_time': 0, 'Not_found': 0}
     for i in range(len(route) - 1):
-        IVTT, wait_time, stop_sequence, dept_time = leg_wise_attributes(route[i], route[i + 1], dept_time)
+        IVTT, wait_time, stop_sequence, dept_time = leg_wise_attributes(route[i], route[i + 1],route,dept_time)
         if IVTT == -10000:
             route_attributes['Not_found'] = 1
             break
@@ -331,11 +340,15 @@ def haversine_distance() -> None:
     global stops_stops_dict, stops_data, ps_od_dict
     # Creating the array of stops_coordinates
     stops_cord = np.array(stops_df[['stop_lat', 'stop_lon']])
+
     # Creating the stops-stops distance matrix using haversine
     stops_stops_matrix = haversine_vector(stops_cord, stops_cord, unit=Unit.METERS, comb=True)
+
     # Converting the matrix to dataframe and dictionary for easy access
     stops_stops_df = pd.DataFrame(stops_stops_matrix, index=stops_df['stop_id'], columns=stops_df['stop_id'])
     stops_stops_dict = stops_stops_df.to_dict(orient='index')
+
+    # Creating the dictionary of path size for each od pair
     ps_od_dict = {}
     return None
 
@@ -371,10 +384,10 @@ def path_size(row):
 
 if __name__ == '__main__':
     year = 2019
-    preProcessing(gtfs_path='GTFS.zip',
-                  file_path='NBT19MTT3a_routechoice_tb_wf.csv', year=year)
-    # preProcessing(gtfs_path='./Route_choice_Modelling/GTFS.zip',
-    #               file_path='./Route_choice_Modelling/Route choice by origin-destination pair 2017.xls', year=year)
+    # preProcessing(gtfs_path='GTFS.zip',
+    #               file_path='NBT19MTT3a_routechoice_tb_wf.csv', year=year)
+    preProcessing(gtfs_path='./Route_choice_Modelling/GTFS.zip',
+                  file_path='./Route_choice_Modelling/Route choice by origin-destination pair 2017.xls', year=year)
     prepIndividualDataset()
     stops_trips_fn()
     create_individual_time_interval()
@@ -388,22 +401,27 @@ if __name__ == '__main__':
         route_columns = [f'route_{i}' for i in range(1, max_alt + 1)]
         od_timeInterval_df.loc[:, route_columns] = od_timeInterval_df.loc[:, route_columns].fillna(0)
         od_timeInterval = od_timeInterval_df.to_dict('records')
+
+        # Multiprocessing
         CORES = 20
         start_time = time.time()
         # Times and transfer attributes
         with Pool(CORES) as pool:
             results = pool.map(row_wise_attributes, od_timeInterval)
         results_df = pd.DataFrame(results)
-        # Print the results DataFrame
+        # Concatenate the attributes derived from the function to the original dataframe
         od_timeInterval_df = pd.concat([od_timeInterval_df, results_df], axis=1)
-        od_timeInterval = od_timeInterval_df.to_dict('records')
+
         # path size attributes
+        od_timeInterval = od_timeInterval_df.to_dict('records')
         od_timeInterval = od_timeInterval_df.to_dict('records')
         with Pool(CORES) as pool:
             results = pool.map(path_size, od_timeInterval)
         results_df = pd.DataFrame(results)
-        # Print the results DataFrame
+        # Concatenate the attributes derived from the function to the original dataframe
         od_timeInterval_df = pd.concat([od_timeInterval_df, results_df], axis=1)
+
+        # Saving the dataframe
         print(f'Time taken for the parallel with 20 cores: {(time.time() - start_time)}')
         od_timeInterval_df.to_csv(f'./Output/od_{year}_{key}.csv', index=False)
         print(f'File saved in ./Route_choice_Modelling/Output/od_{year}_{key}.csv')
