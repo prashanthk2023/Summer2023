@@ -10,11 +10,7 @@
 * Path Size
 
 ## Data:
-<p align = "justify">
-  
-GTFS data is scrapped from the [tfl.gov.uk](https://tfl.gov.uk/info-for/open-data-users/). The GTFS (General Transit Feed Specification) contains comprehensive data about various aspects of public transportation systems, including details about stops, trips, routes, stop times, fares, and more. Route choices are determined from the perspective of the agents, and since we lack individual commuter information, we utilized OD (Origin-Destination) data from the years 2019 and 2017. The OD data includes information about the available routes and the corresponding number of commuters opting for each route for each time interval. We utilized the OD data and transformed it into a commuter-level dataset, which includes information about chosen routes and available routes for each commuter. The departure time for each commuter was randomly generated within a specific time interval. 
-
-</p> 
+GTFS data is scrapped from the [tfl.gov.uk](https://tfl.gov.uk/info-for/open-data-users/). The GTFS (General Transit Feed Specification) contains comprehensive data about various aspects of public transportation systems, including details about stops, trips, routes, stop times, fares, and more. Route choices are determined from the perspective of the agents, and since we lack individual commuter information, we utilized OD (Origin-Destination) data from the years 2019 and 2017. The OD data includes information about the available routes and the corresponding number of commuters opting for each route for each time interval. We utilized the OD data and transformed it into a commuter-level dataset, which includes information about chosen routes and available routes for each commuter. The departure time for each commuter was randomly generated within a specific time interval.
 
 &nbsp; &nbsp; &nbsp; The route is represented as the $O > transfer_1 > transfer_2 > ... > D$, where O and D represent the origin and destination stops respectively and $transfer_i$ represents the $i^{th}$ transfer stop.
 
