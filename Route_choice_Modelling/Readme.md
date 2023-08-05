@@ -15,7 +15,7 @@ GTFS data is scrapped from the [tfl.gov.uk](https://tfl.gov.uk/info-for/open-dat
 &nbsp; &nbsp; &nbsp; The route is represented as the $O > transfer_1 > transfer_2 > ... > D$, where O and D represent the origin and destination stops respectively, and $transfer_i$ represents the $i^{th}$ transfer stop.
 
 ## Methodology:
-The total travel time is derived by computing the difference between the arrival time at the destination and the departure time from the origin. The in-vehicle travel time is determined by adding the travel time for each journey segment. Transfer time, on the other hand, refers to the waiting time between transfers and is calculated as the time between each segment. [Path size] {https://journals.sagepub.com/doi/10.3141/2538-02} is introduced to capture any correlation among the available route alternatives.
+The total travel time is derived by computing the difference between the arrival time at the destination and the departure time from the origin. The in-vehicle travel time is determined by adding the travel time for each journey segment. Transfer time, on the other hand, refers to the waiting time between transfers and is calculated as the time between each segment. [Path size](https://journals.sagepub.com/doi/10.3141/2538-02) is introduced to capture any correlation among the available route alternatives.
 
 
 
